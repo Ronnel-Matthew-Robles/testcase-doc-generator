@@ -1,83 +1,6 @@
 import excel from 'exceljs';
 import path from 'path';
 
-const issues = [{
-    userStoryNumber: "WCX-5630",
-    userStoryTitle: "[WCX-NICE] [Permissions] [Role Permission] Parameters",
-    testCases: {
-        "epicNumber": "WCX-5313",
-        "userStoryNumber": "WCX-5630",
-        "testCases": [
-          {
-            "title": "Verify Role Name and ASG dropdowns appear in Role Permission pop-up",
-            "steps": [
-              "Login to WCX as a valid user.",
-              "Navigate to Permissions section.",
-              "Click on Role Permission.",
-              "Observe the Role Permission pop-up."
-            ],
-            "expectedResults": "Role Permission pop-up should display dropdowns for Role Name and Advisor Scheduling Group.",
-            "type": "positive"
-          },
-          {
-            "title": "Verify Role Name dropdown placeholder and ality",
-            "steps": [
-              "Login to WCX as a valid user.",
-              "Navigate to Permissions section.",
-              "Click on Role Permission.",
-              "Observe the Role Name dropdown."
-            ],
-            "expectedResults": "Role Name dropdown should have a placeholder text 'Select' and an edit icon.",
-            "type": "positive"
-          },
-          {
-            "title": "Verify Role Name dropdown displays existing roles",
-            "steps": [
-              "Login to WCX as a valid user.",
-              "Navigate to Permissions section.",
-              "Click on Role Permission.",
-              "Click on the Role Name dropdown."
-            ],
-            "expectedResults": "Role Name dropdown should display a list of all existing roles.",
-            "type": "positive"
-          },
-          {
-            "title": "Verify ASG dropdown default option and ality",
-            "steps": [
-              "Login to WCX as a valid user.",
-              "Navigate to Permissions section.",
-              "Click on Role Permission.",
-              "Observe the Advisor Scheduling Group dropdown."
-            ],
-            "expectedResults": "Advisor Scheduling Group dropdown should have 'All' as a default option.",
-            "type": "positive"
-          },
-          {
-            "title": "Verify ASG dropdown displays existing options",
-            "steps": [
-              "Login to WCX as a valid user.",
-              "Navigate to Permissions section.",
-              "Click on Role Permission.",
-              "Click on the Advisor Scheduling Group dropdown."
-            ],
-            "expectedResults": "Advisor Scheduling Group dropdown should display a list of all existing options.",
-            "type": "positive"
-          },
-          {
-            "title": "Verify no s are added to the grid and add feature",
-            "steps": [
-              "Login to WCX as a valid user.",
-              "Navigate to Permissions section.",
-              "Click on Role Permission.",
-              "Observe the grid area in the Role Permission pop-up."
-            ],
-            "expectedResults": "No new s should be added to the grid and add feature.",
-            "type": "positive"
-          }
-        ]
-      }
-}];
-
 class TestCaseDocGenerator {
     constructor(issues) {
         this.issues = issues;
@@ -92,7 +15,7 @@ class TestCaseDocGenerator {
         this.createGuidelineWorksheet();
         this.createCoverPageWorksheet();
         this.createTestSummaryWorksheet();
-        issues.forEach((issue) => {
+        this.issues.forEach((issue) => {
             this.createUserStorySheet(issue);
         });
         this.createTemplateRevisionHistoryWorksheet();
@@ -430,7 +353,7 @@ class TestCaseDocGenerator {
             top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'}
         };
       
-        // Add al header
+        // Add Functional header
         testSummarySheet.mergeCells('E6:G6');
         testSummarySheet.getCell('E6').value = 'Functional';
         testSummarySheet.getCell('E6').border = {
@@ -493,9 +416,9 @@ class TestCaseDocGenerator {
         
         // Add data rows
         let rowIndex = 9;
-        issues.forEach(issue => {
+        this.issues.forEach(issue => {
             testSummarySheet.mergeCells(`B${rowIndex}:M${rowIndex}`);
-            testSummarySheet.getCell(`B${rowIndex}`).value = issue.userStoryTitle || 'USER STORY TITLE';
+            testSummarySheet.getCell(`B${rowIndex}`).value = issue.title || 'N/A';
             testSummarySheet.getCell(`B${rowIndex}`).font = { bold: true };
             testSummarySheet.getCell(`B${rowIndex}`).fill = {
                 type: 'pattern',
@@ -507,11 +430,11 @@ class TestCaseDocGenerator {
             };
     
             rowIndex++;
-            issue.testCases.testCases.forEach((testCase, index) => {
+            issue.testCases.forEach((testCase, index) => {
                 const row = [
                     `TC00${index + 1}`,
-                    issue.testCases.epicNumber,
-                    issue.testCases.userStoryNumber,
+                    issue.epicNumber,
+                    issue.userStoryNumber,
                     testCase.title,
                     testCase.type.charAt(0).toUpperCase() + testCase.type.slice(1),
                     testCase.steps.length,
@@ -537,7 +460,7 @@ class TestCaseDocGenerator {
     }
     
      createUserStorySheet(issue) {
-        const sheetName = issue.testCases.userStoryNumber;
+        const sheetName = issue.userStoryNumber;
         const sheet = this.workbook.addWorksheet(sheetName);
     
         // Set column widths
@@ -548,7 +471,7 @@ class TestCaseDocGenerator {
     
         let rowIndex = 1;
     
-        issue.testCases.testCases.forEach((testCase, testCaseIndex) => {
+        issue.testCases.forEach((testCase, testCaseIndex) => {
             // Add Test Case information
             sheet.mergeCells(`B${rowIndex}:C${rowIndex}`);
             sheet.getCell(`B${rowIndex}`).value = 'Test Case No:';
@@ -569,7 +492,7 @@ class TestCaseDocGenerator {
             sheet.getCell(`B${rowIndex}`).value = 'Test Description:';
             sheet.getCell(`B${rowIndex}`).font = { bold: true };
             sheet.getCell(`B${rowIndex}`).fill = {  type: 'pattern', pattern: 'solid', fgColor: { argb: 'c0c0c0' } };
-            sheet.getCell(`D${rowIndex}`).value = testCase.title;
+            sheet.getCell(`D${rowIndex}`).value = testCase.description;
             rowIndex++;
     
             sheet.addImage(this.logoId, {
@@ -584,7 +507,7 @@ class TestCaseDocGenerator {
             sheet.getCell(`B${rowIndex}`).fill = {  type: 'pattern', pattern: 'solid', fgColor: { argb: 'c0c0c0' } };
             sheet.getCell(`B${rowIndex}`).alignment = { vertical: 'middle' };
             // sheet.mergeCells(`D${rowIndex}:Q${rowIndex + 4}`);
-            sheet.getCell(`D${rowIndex}`).value = testCase.steps.join('\n');
+            sheet.getCell(`D${rowIndex}`).value = ['1. User should have valid URL','2. User should have access to WCX Application'].join('\n');
             sheet.getCell(`D${rowIndex}`).alignment = { wrapText: true, vertical: 'top' };
             rowIndex++;
     
@@ -705,10 +628,14 @@ class TestCaseDocGenerator {
                 row.getCell(2).value = index + 1;
                 row.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' };
                 row.getCell(3).value = step;
-                row.getCell(3).alignment = { vertical: 'middle', horizontal: 'center' };
+                row.getCell(3).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     
                 if (index == testCase.steps.length - 1) {
-                    row.getCell(4).value = testCase.expectedResults;
+                    if (typeof testCase.expectedResults === 'string') {
+                        row.getCell(4).value = testCase.expectedResults;
+                    } else if (Array.isArray(testCase.expectedResults)) {
+                        row.getCell(4).value = testCase.expectedResults.join("\n");
+                    }
                     row.getCell(4).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
                 } else {
                     row.getCell(4).value = "";
@@ -823,8 +750,8 @@ class TestCaseDocGenerator {
         let negativeCount = 0;
     
         // Iterate through issues to count positive and negative test cases
-        issues.forEach(issue => {
-            issue.testCases.testCases.forEach(testCase => {
+        this.issues.forEach(issue => {
+            issue.testCases.forEach(testCase => {
                 if (testCase.type === 'positive') {
                     positiveCount++;
                 } else if (testCase.type === 'negative') {

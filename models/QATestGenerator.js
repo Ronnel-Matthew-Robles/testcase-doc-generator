@@ -5,6 +5,7 @@ const QATestGeneratorSchema = new mongoose.Schema({
     runId: { type: String, unique: true },
     messageId: { type: String, unique: true },
     userStoryNumber: { type: String, unique: true },
+    title: { type: String },
     data: Object,
     testIssues: Array,
 });

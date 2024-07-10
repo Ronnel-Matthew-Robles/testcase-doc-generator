@@ -12,6 +12,7 @@ import FileReference from './models/FileReference.js';
 import TestCaseDocGenerator from './generate_excel_file.js';
 
 import excel from 'exceljs';
+import { title } from 'process';
 
 // Derive __dirname in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -51,7 +52,7 @@ const fetchJiraUserStories = async () => {
   };
 
   const query = {
-    'jql': 'project = WCX AND issuetype = Story AND sprint in openSprints() AND status NOT IN (Closed, Cancelled) ORDER BY created DESC'
+    'jql': 'project = WCX AND issuetype = Story AND sprint in openSprints() AND status NOT IN (Closed, Cancelled, "In Testing") ORDER BY created DESC'
   };
 
   const response = await axios.get(url, { headers, params: query });
@@ -164,7 +165,7 @@ const enhanceUserStory = async (story) => {
 
   const prompt = {
     userStoryNumber: story['key'],
-    "Epic #": story['fields']['parent']['key'],
+    "Epic #": story['fields']['parent'] ? story['fields']['parent']['key'] || "No parent provided." : "No parent provided.",
     "User Story #": story['key'],
     "Title": story['fields']['summary'],
     "Description": extractText(story['fields']['description']) || "No description provided.",
@@ -242,6 +243,7 @@ async function getStoredDataOrGenerate(data, assistantId, model) {
     
     // get the data["User Story #"] and store in variable. if not found get the data.userStoryNumber
     const userStoryNumber = data["User Story #"] || data.userStoryNumber;
+    const title = data["Title"] || data.title;
     console.log('Getting stored data or generating new data for ' + userStoryNumber + '...')
   
     // Check if the message is stored
@@ -273,7 +275,7 @@ async function getStoredDataOrGenerate(data, assistantId, model) {
     }
   
     // Save the new message to the database
-    const newEntry = new Model({ userStoryNumber, runId: id, threadId: thread_id, messageId, data: generatedData });
+    const newEntry = new Model({ userStoryNumber, title, runId: id, threadId: thread_id, messageId, data: generatedData });
     await newEntry.save();
   
     return newEntry.data;
@@ -354,36 +356,35 @@ async function createTestIssueIfNotExist(testCaseName, issueType) {
 }
 
 async function createTestIssueInXrayIfNotExist(story, testCase, issueType) {
-  const testCaseName = `[${story['User Story #']}] ${testCase.title}`;
-  const unstructured = `*Steps:*\n${testCase.steps.map((step, index) => `${index + 1}. ${step}`).join('\n')}\n\n*Expected Results:*\n${testCase.expectedResults}\n\n*Type:* ${testCase.type}`;
+  try {
+    const testCaseName = `[${story['User Story #']}] ${testCase.title}`;
+    const unstructured = `*Steps:*\n${testCase.steps.map((step, index) => `${index + 1}. ${step}`).join('\n')}\n\n*Expected Results:*\n${testCase.expectedResults}\n\n*Type:* ${testCase.type}`;
 
-  // Check if test issue exists
-  const existingTestCase = await findItemByName(testCaseName, issueType);
-  if (existingTestCase.total == 0) {
-    const endpoint = 'https://xray.cloud.getxray.app/api/v2/graphql';
+    const existingTestCase = await findItemByName(testCaseName, issueType);
+    if (existingTestCase.total == 0) {
+      const endpoint = 'https://xray.cloud.getxray.app/api/v2/graphql';
 
-    const mutation = `
-      mutation createTest($unstructured: String!, $testCaseName: String!){
-        createTest(
-          testType: { name: "Generic" },
-          unstructured: $unstructured,
-          jira: {
-            fields: { summary: $testCaseName, project: {key: "WCX"} }
-          },
-          preconditionIssueIds: ["735970", "735971"]
-        ) {
-          test {
-            issueId
-            testType {
-              name
+      const mutation = `
+        mutation createTest($unstructured: String!, $testCaseName: String!){
+          createTest(
+            testType: { name: "Generic" },
+            unstructured: $unstructured,
+            jira: {
+              fields: { summary: $testCaseName, project: {key: "WCX"} }
+            },
+            preconditionIssueIds: ["735970", "735971"]
+          ) {
+            test {
+              issueId
+              testType {
+                name
+              }
+              unstructured
+              jira(fields: ["key"])
             }
-            unstructured
-            jira(fields: ["key"])
-            preconditionIssueIds
+            warnings
           }
-          warnings
         }
-      }
       `;
 
       const variables = {
@@ -402,11 +403,11 @@ async function createTestIssueInXrayIfNotExist(story, testCase, issueType) {
       });
 
       if (response.status !== 200) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.status} - Body: ${JSON.stringify(response.data)}`);
       }
-    
+
       const jsonResponse = response.data;
-    
+
       if (jsonResponse.data) {
         console.log(`Created new test issue: ${JSON.stringify(jsonResponse.data.createTest.test.jira.key)}`);
       } else if (jsonResponse.errors) {
@@ -414,9 +415,12 @@ async function createTestIssueInXrayIfNotExist(story, testCase, issueType) {
       }
 
       return jsonResponse;
-  } else {
-    console.log(`Test issue already exists: ${testCaseName} with issuetype ${issueType}`);
-    return existingTestCase.issues[0];
+    } else {
+      console.log(`Test issue already exists: ${testCaseName} with issuetype ${issueType}`);
+      return existingTestCase.issues[0];
+    }
+  } catch (error) {
+    console.error('Error:', error.message);
   }
 }
 
@@ -571,40 +575,6 @@ async function addTestExecutions(issueId, testExecIssueIds, actionType) {
   }
 }
 
-const generateExcelFile = (data, filePath) => {
-  const workbook = new excel.Workbook();
-  const coverPageSheet = workbook.addWorksheet('Cover Page');
-  const testSummarySheet = workbook.addWorksheet('Test Summary');
-  const testCasesSheet = workbook.addWorksheet('Test Cases');
-  const edgeCasesSheet = workbook.addWorksheet('Edge Cases');
-  const risksSheet = workbook.addWorksheet('Risks and Mitigations');
-  const questionsSheet = workbook.addWorksheet('Questions for Stakeholders');
-  const templateRevisionHistorySheet = workbook.addWorksheet('Template Revision History');
-  const formulasSheet = workbook.addWorksheet('Formulas');
-
-  // Populate Test Cases sheet
-  data.testCases.forEach((testCase, index) => {
-    testCasesSheet.addRow([testCase.title, testCase.steps.join('\n'), testCase.expectedResults, testCase.type]);
-  });
-
-  // Populate Edge Cases sheet
-  data.edgeCases.forEach((edgeCase, index) => {
-    edgeCasesSheet.addRow([edgeCase.title, edgeCase.steps.join('\n'), edgeCase.expectedResults, edgeCase.type]);
-  });
-
-  // Populate Risks and Mitigations sheet
-  data.risksAndMitigations.forEach((risk, index) => {
-    risksSheet.addRow([risk.risk, risk.mitigation]);
-  });
-
-  // Populate Questions for Stakeholders sheet
-  data.questionsForStakeholders.forEach((question, index) => {
-    questionsSheet.addRow([question]);
-  });
-
-  return workbook.xlsx.writeFile(filePath);
-};
-
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout
@@ -615,6 +585,8 @@ const main = async () => {
   let planType = '';
   let includeEdgeCases = false;
   let isAutomated = true;
+
+  const testCases = [];
 
   // Ask for Sprint Number
   planName = await new Promise((resolve) => {
@@ -719,10 +691,12 @@ const main = async () => {
       await addTests(testSetIssue.id, testIssues, "testSet");
       await addTests(testExecutionIssue.id, testIssues, "testExecution");
       await addTests(testPlanIssue.id, testIssues, "testPlan");
+      // Add to default preconditions
+      await addTests('735970', testIssues, "precondition");
+      await addTests('735971', testIssues, "precondition");
       
-      // await generateExcelFile(savedQATestGeneratorData, `${story['User Story #']}_test_case_document.xlsx`);
-      const excelGenerator = new TestCaseDocGenerator(savedQATestGeneratorData);
-      excelGenerator.generateTestCaseDoc(`${story['User Story #']}_test_case_document.xlsx`)
+      savedQATestGeneratorData.title = story['Title'];
+      testCases.push(savedQATestGeneratorData);
 
       // Save the updated data back to MongoDB
       await QATestGenerator.updateOne(
@@ -732,11 +706,15 @@ const main = async () => {
 
     } else {
       console.log(`Test issues already exist for ${story['User Story #']}`);
-      const excelGenerator = new TestCaseDocGenerator(existingDocument.data);
-      excelGenerator.generateTestCaseDoc(`${story['User Story #']}_test_case_document.xlsx`)
+      const data = existingDocument.data;
+      data['title'] = existingDocument.title;
+      testCases.push(data);
       continue;
     }
   }
+
+  const excelGenerator = new TestCaseDocGenerator(testCases);
+  excelGenerator.generateTestCaseDoc(`${testPlanName}_test_case_document.xlsx`)
 
   console.log('All user stories have been processed.');
 
